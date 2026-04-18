@@ -111,21 +111,21 @@ def meter_string(meter):
 
 def convert(text, meter_str, rebeam):
 	meter = None
-	if meter_str is not None:
+	if meter_str is not None and meter_str != "none":
 		meter = meter_str.replace("+",",").replace(".",",").split(",")
 		for i in range(len(meter)):
 			try:
 				meter[i] = int(meter[i])
 			except:
-				print("Error with meter")
+				print("Error with meter", file=sys.stderr)
 
 	lines = ("|Begin\n" + clean_text(text) + "\n|Done").split("\n")
 	title = ""
 	author = ""
 	lyricist = ""
 	terms = ""
-	transcription = ""
-	comments = ""
+	transcription = "Converted on " + str(datetime.date.today()) + " using nwctxt2abc from https://github.com/freehymns/translator"
+	sources = ""
 	timesig = None
 	timesig_count = 0
 	keysig = None
@@ -177,13 +177,16 @@ def convert(text, meter_str, rebeam):
 					if tempo is None:
 						tempo = value
 		if line.startswith("|SongInfo|"):
+			if line.find("Courtesy of the Cyber Hymnal") > 0:
+				sources = "The Cyber Hymnal(tm)"
 			for part in line[10:].split("|"):
 				if part.startswith("Title:"):
 					title = part[6:].replace('"','')
-					if meter is None:
-						meter = parse_meter(title)
-						if meter is not None and title.find(str(meter[0])) >= 0:
-							title = (title[0:title.find(str(meter[0]))] + "$").replace(", $", "").upper()
+					m = parse_meter(title)
+					if m is not None:
+						title = (title[0:title.find(str(m[0]))] + "$").replace(", $", "").upper()
+						if meter is None:
+							meter = m
 				if part.startswith("Author:"):
 					author = part[7:].replace('"','')
 				if part.startswith("Lyricist:"):
@@ -191,12 +194,10 @@ def convert(text, meter_str, rebeam):
 				if part.startswith("Copyright1:"):
 					terms = part[11:].replace('"','')
 					if terms.lower().find("public domain") < 0:
-						print("Warning: Copyright1 is not Public Domain")
-				if part.startswith("Copyright2:"):
-					if part[11:].find("Courtesy of the Cyber Hymnal") > 0:
-						transcription = "Converted from the Cyber Hymnal(tm) on " + str(datetime.date.today()) + " using " + __file__
-				if part.startswith("Comments:"):
-					comments = part[9:].replace('"','')
+						print("Warning: Copyright1 is not Public Domain", file=sys.stderr)
+				if part.startswith("Comments:\"Source:"):
+					sources += ", " + part[18:-1].replace("\\\"", "\"").strip()
+						
 	#end for line
 	
 	staves = max(staves,1)
@@ -210,17 +211,18 @@ def convert(text, meter_str, rebeam):
 		
 	header = "X:1\n"
 	header += "T:" + title + "\n"
-	if meter_str is not None:
-		header += "T:(" + meter_str + ")\n"
-	elif meter is not None:
-		header += "T:(" + meter_string(meter) + ")\n"
+	if meter_str != "none":
+		if meter_str is not None:
+			header += "T:(" + meter_str + ")\n"
+		elif meter is not None:
+			header += "T:(" + meter_string(meter) + ")\n"
 	header += "C:" + author + "\n"
 	if terms != "":
 		header += "Z:Terms:" + terms + "\n"
 	if transcription != "":
 		header += "Z:Transcription:" + transcription + "\n"
-	if comments != "":
-		header += "Z:" + comments + "\n"
+	if sources != "":
+		header += "Z:Sources:" + sources + "\n"
 	header += "I:score (1 2) (3 4)\n"
 	header += "I:voicecombine 1\n"
 	header += "L:1/1\n"
@@ -229,9 +231,9 @@ def convert(text, meter_str, rebeam):
 	header += "K:" + keysig + "\n"
 	
 	if timesig_count == 0:
-		print ("Warning: No time signature. Using common time.")
+		print ("Warning: No time signature. Using common time.", file=sys.stderr)
 	if keysig_count > 1:
-		print ("Warning: Multiple key signatures not yet supported.")
+		print ("Warning: Multiple key signatures not yet supported.", file=sys.stderr)
 	
 	splits = [[]]
 	music = ["","","",""]
@@ -420,14 +422,14 @@ def convert(text, meter_str, rebeam):
 					if passno == 1:
 						if start_beat is None:
 							if pos > 1 + SMALL:
-								print("Warning: line " + str(lineno) + ": First bar is beyond the first measure.")
+								print("Warning: line " + str(lineno) + ": First bar is beyond the first measure.", file=sys.stderr)
 						else:
 							if bartype == 1 and ((pos - start_beat) * bpm / beat_len + SMALL) - round((pos - start_beat) * bpm / beat_len + SMALL) > SMALL * 2:
-								print("Warning: line " + str(lineno) + ": Bar is not at a valid measure boundary.")
+								print("Warning: line " + str(lineno) + ": Bar is not at a valid measure boundary.", file=sys.stderr)
 							if not at_beat:
-								print("Warning: line " + str(lineno) + ": Bar is not on a valid beat.")
+								print("Warning: line " + str(lineno) + ": Bar is not on a valid beat.", file=sys.stderr)
 						if max_pos - pos > SMALL:
-							print("Warning: line " + str(lineno) + ": Long note of previous chord crosses the bar.")
+							print("Warning: line " + str(lineno) + ": Long note of previous chord crosses the bar.", file=sys.stderr)
 					if start_beat is None:
 						start_beat = pos
 				valid_split = (at_beat and (max_pos - pos < SMALL) and ipos >= 0 and (not in_slur[0]) and (not in_slur[1]) and (not in_tie[0]) and (not in_tie[1]))
@@ -534,29 +536,28 @@ def convert(text, meter_str, rebeam):
 	body = body.replace("(3x/16 x/16 x/16", "x/8")
 	body = body.replace("(3x/8 x/8 x/8", "x/4")
 	body = body.replace("!sp!y |", "|")
+	
 	return header + body
 	
 
 test_text = """
 """
 
-rebeam = False
-for i in range(len(sys.argv)):
-	if sys.argv[i].find("rebeam") >= 0:
-		rebeam = True
-
 meter = None
-if len(sys.argv) > 2:
-	if sys.argv[2].find("rebeam") < 0:
-		meter = sys.argv[2]
-	
-if len(sys.argv) > 1 and sys.argv[1] == "test":
-	print(convert(test_text, meter, rebeam))
-elif len(sys.argv) > 1:
-	text = ""
-	with open(sys.argv[1],encoding="utf-8") as f:
-		for line in f:
-			text += line
+rebeam = False
+text = ""
+for i in range(1,len(sys.argv)):
+	if sys.argv[i] == "-rebeam":
+		rebeam = True
+	if sys.argv[i] == "-m":
+		meter = sys.argv[i + 1]
+	if sys.argv[1] == "-test":
+		text = test_text;
+if len(sys.argv) > 1:
+	if text == "":
+		with open(sys.argv[-1],encoding="utf-8") as f:
+			for line in f:
+				text += line
 	print(convert(text, meter, rebeam))
 else:
-	print("Syntax: " + sys.argv[0] + " filename [meter] [rebeam]")
+	print("Syntax: " + sys.argv[0] + " [-m meter_str|\"none\"] [-rebeam] filename")
