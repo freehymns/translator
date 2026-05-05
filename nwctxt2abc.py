@@ -206,7 +206,10 @@ def convert(text, meter_str, rebeam):
 					title = part[6:].replace('"','')
 					m = parse_meter(title)
 					if m is not None:
-						title = (title[0:title.find(str(m[0]))] + "$").replace(", $", "").upper()
+						i = title.find(", " + str(m[0]))
+						if i > 0:
+							title = title[0:i]
+						title = title.upper()
 						if meter is None:
 							meter = m
 				if part.startswith("Author:"):
@@ -218,9 +221,7 @@ def convert(text, meter_str, rebeam):
 					if terms.lower().find("public domain") < 0:
 						print("Warning: Copyright1 is not Public Domain", file=sys.stderr)
 				if part.startswith("Comments:\"Source:"):
-					sources += ", from " + part[18:-1].replace("\\\"", "\"").strip()
-						
-	#end for line
+					sources += ", from " + part[18:-1].strip().replace("\\n", " ").replace("\\r", " ").replace("\\\\", "{BS}").replace("\\", "").replace("{BS}", "\\")
 	
 	staves = max(staves,1)
 	
@@ -257,10 +258,12 @@ def convert(text, meter_str, rebeam):
 	if keysig_count > 1:
 		print ("Warning: Multiple key signatures not yet supported.", file=sys.stderr)
 	
-	splits = [[]]
+	#splits = [[]]
 	music = ["","","",""]
+	words = "la"
 
-	for passno in range(1,3):
+	#for passno in range(1,3):
+	for passno in range(2,3):
 		#print("Pass " + str(passno))
 		staff = 0
 		for lineno in range(len(lines)):
@@ -274,6 +277,8 @@ def convert(text, meter_str, rebeam):
 				if line.find("Style:DCalFine") > 0:
 					if staff == 0:
 						music[0] += "!D.C.!"
+			if line.startswith("|Note|") or line.startswith("|Chord|"):
+				words += " la"
 			if line.startswith("|Note|") or line.startswith("|Chord|") or line.startswith("|Rest|") or line.startswith("|RestChord|"):
 				grace = (line.find("Grace") > 0)
 				openings = []
@@ -284,6 +289,9 @@ def convert(text, meter_str, rebeam):
 				options = []
 				tie_marks = []
 				for suffix in ["", "2"]:
+					#if line.startswith("|RestChord|"):
+					#	if part.find("Pos" + suffix) < 0:
+					#		continue
 					pos = ""
 					dur = None
 					opts = ""
@@ -315,6 +323,7 @@ def convert(text, meter_str, rebeam):
 								opening = "(3" + opening
 							openings.append(opening)
 							if len(pos) == 0:
+								#if not line.startswith("|RestChord|"):
 								notes.append("x" if line.find("HideRest") >= 0 else "z");
 							else:
 								notes.append(convertNote(value, clef))
@@ -377,45 +386,54 @@ def convert(text, meter_str, rebeam):
 						if indexes[voice][0] == None:
 							music_str += " " + openings[indexes[UPPER][0]] + "x" + durations[indexes[UPPER][0]][1]
 						else:
+							rest_count = 0
+							top = 0
+							if line.startswith("|RestChord|"):
+								for i in range(len(indexes[voice])):
+									if notes[indexes[voice][i]] == 'x':
+										rest_count += 1
+										top += 1
+										print("Rest count:" + str(rest_count))
 							if ((staff == 0 and voice==LOWER) or (staff == 1 and voice==UPPER)) and stem_dir != last_stem_dir:
 								last_stem_dir = stem_dir
 							at_beat = start_beat is not None and abs(((music_len[voice] - start_beat) / beat_len) - round((music_len[voice] - start_beat) / beat_len)) < SMALL
 							if rebeam and (start_beat is None or at_beat): # or durations[indexes[voice][0]][0] - beat_len > SMALL):
 								music_str += " "
-							if slurs[indexes[voice][0]]:
+							if slurs[indexes[voice][top]]:
 								if not in_slur[voice]:
 									music_str += "("
 									in_slur[voice] = True
-							music_str += openings[indexes[voice][0]]
-							if len(indexes[voice]) > 1:
+							music_str += openings[indexes[voice][top]]
+							if len(indexes[voice]) - rest_count > 1:
 								music_str += "["
 							if grace:
 								music_str += "{"
 							in_tie[voice] = False
 							for i in range(len(indexes[voice])):
-								music_str += notes[indexes[voice][i]]
+								if len(indexes[voice]) == 1 or notes[indexes[voice][i]] != 'x':
+									music_str += notes[indexes[voice][i]]
 								if len(indexes[voice]) > 1 and tie_marks[indexes[voice][i]]:
 									music_str += "-"
 								in_tie[voice] = in_tie[voice] or tie_marks[indexes[voice][i]]
 							if grace:
 								music_str += "}"
-							if len(indexes[voice]) > 1:
+							if len(indexes[voice]) - rest_count > 1:
 								music_str += "]"
-							music_str += durations[indexes[voice][0]][1]
-							if len(indexes[voice]) == 1 and tie_marks[indexes[voice][0]]:
+							music_str += durations[indexes[voice][top]][1]
+							if len(indexes[voice]) == 1 and tie_marks[indexes[voice][top]]:
 								music_str += "-"
-							if not slurs[indexes[voice][0]]:
+							if not slurs[indexes[voice][top]] and notes[indexes[voice][top]] != 'x' and notes[indexes[voice][top]] != 'z':
 								if in_slur[voice]:
 									music_str += ")"
 									in_slur[voice] = False
-							if not rebeam and (options[indexes[voice][0]].find("Beam") < 0 or options[indexes[voice][0]].find("Beam=End") >= 0):
+							if not rebeam and (options[indexes[voice][top]].find("Beam") < 0 or options[indexes[voice][top]].find("Beam=End") >= 0):
 								music_str += " "
 						if passno == 2:
 							music[staff * 2 + voice] += music_str
-						if indexes[voice][0] == None:
-							music_len[voice] += durations[indexes[UPPER][0]][0]
+						if indexes[voice][top] == None:
+							music_len[voice] += durations[indexes[UPPER][top]][0]
 						else:
-							music_len[voice] += durations[indexes[voice][0]][0]
+							music_len[voice] += durations[indexes[voice][top]][0]
 				bar_len += durations[shortest_index][0]
 			if line.startswith("|Note|") or line.startswith("|Chord|") or line.startswith("|Rest|") or line.startswith("|RestChord|") or line.startswith("|Bar") or line.startswith("|AddStaff") or line.startswith("|TimeSig|") or line.startswith("|Done"):
 				bartype = 0
@@ -441,7 +459,7 @@ def convert(text, meter_str, rebeam):
 					ipos = int(round((pos - start_beat) / beat_len))
 				music_str = ""
 				if bartype > 0 and bartype < 8:
-					if passno == 1:
+					if passno == 2: #1:
 						if start_beat is None:
 							if pos > 1 + SMALL:
 								print("Warning: line " + str(lineno) + ": First bar is beyond the first measure.", file=sys.stderr)
@@ -454,18 +472,19 @@ def convert(text, meter_str, rebeam):
 							print("Warning: line " + str(lineno) + ": Long note of previous chord crosses the bar.", file=sys.stderr)
 					if start_beat is None:
 						start_beat = pos
-				valid_split = (at_beat and (max_pos - pos < SMALL) and ipos >= 0 and (not in_slur[0]) and (not in_slur[1]) and (not in_tie[0]) and (not in_tie[1]))
-				while len(splits[section]) <= ipos:
-					splits[section].append(0)
-				if passno == 2:
-					valid_split = (valid_split and splits[section][ipos] == staves) 
-				if valid_split or bartype > 0:
-					if passno == 1 and valid_split and bartype == 0:
-						splits[section][ipos] = splits[section][ipos] + 1
-				if bartype == 0:
-					if valid_split and passno == 2:
-						music_str += "!sp!y "
-				else:
+				#valid_split = (at_beat and (max_pos - pos < SMALL) and ipos >= 0 and (not in_slur[0]) and (not in_slur[1]) and (not in_tie[0]) and (not in_tie[1]))
+				#while len(splits[section]) <= ipos:
+				#	splits[section].append(0)
+				#if passno == 2:
+				#	valid_split = (valid_split and splits[section][ipos] == staves) 
+				#if valid_split or bartype > 0:
+				#	if passno == 1 and valid_split and bartype == 0:
+				#		splits[section][ipos] = splits[section][ipos] + 1
+				#if bartype == 0:
+				#	if valid_split and passno == 2:
+				#		music_str += "!sp!y "
+				#else:
+				if bartype != 0:
 					bar_len = 0
 					if bartype == 1:
 						music_str += "| "
@@ -477,8 +496,8 @@ def convert(text, meter_str, rebeam):
 						music_str += ":| "
 				if bartype == 2 or bartype == 9:
 					section += 1
-					while len(splits) <= section:
-						splits.append([])
+					#while len(splits) <= section:
+					#	splits.append([])
 					start_beat == None
 					music_len[UPPER] = 0
 					music_len[LOWER] = 0
@@ -509,9 +528,10 @@ def convert(text, meter_str, rebeam):
 				for part in line[6:].split("|"):
 					if part.startswith("Type:"):
 						clef = part[5:].lower()
-			if passno == 2 and line.startswith("|Text"):
-				if line.upper().find("REFRAIN") > 0:
-					music[0] += "\"REFRAIN\" y "
+			#if passno == 2 and line.startswith("|Text"):
+			#	if line.upper().find("REFRAIN") > 0:
+			#		music[0] += "\"REFRAIN\" y "
+			
 	body = ""
 	for i in range(len(music)):
 		body += "V:" + str(i+1) + (" clef=bass" if i > 1 else " clef=treble") + (" stem=up" if i % 2 == 0 else " stem=down") + "\n"
