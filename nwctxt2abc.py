@@ -347,6 +347,15 @@ def convert(text, meter_str, rebeam):
 						highest_index = i
 					if positions[highest_index] != None and positions[i] != None and positions[i] > positions[highest_index]:
 						highest_index = i
+				#if uniform_notes and not uniform_len:
+				#	print("TEST")
+				#	for i in range(len(notes)):
+				#		if i != longest_index:
+				#			notes[i] = "x"
+				#			positions[i] = None
+				#			#durations[i] = durations[longest_index]
+				#			uniform_len = True
+				#			print("reset")
 				if None in positions:
 					if options[highest_index].find("Stem=Up") < 0:
 						for i in range(len(notes)):
@@ -392,8 +401,8 @@ def convert(text, meter_str, rebeam):
 								for i in range(len(indexes[voice])):
 									if notes[indexes[voice][i]] == 'x':
 										rest_count += 1
-										top += 1
-										print("Rest count:" + str(rest_count))
+										if top + 1 < len(indexes[voice]):
+											top += 1
 							if ((staff == 0 and voice==LOWER) or (staff == 1 and voice==UPPER)) and stem_dir != last_stem_dir:
 								last_stem_dir = stem_dir
 							at_beat = start_beat is not None and abs(((music_len[voice] - start_beat) / beat_len) - round((music_len[voice] - start_beat) / beat_len)) < SMALL
